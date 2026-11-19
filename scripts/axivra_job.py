@@ -32,7 +32,7 @@ CF_ACCOUNT = os.environ.get("CF_ACCOUNT_ID", "").strip()
 CF_TOKEN = os.environ.get("CF_API_TOKEN", "").strip()
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 FLUX = "@cf/black-forest-labs/flux-1-schnell"
-TTS = "@cf/myshell-ai/melotts"
+TTS = "@cf/deepgram/aura-2-en"
 
 
 def log(msg):
@@ -87,11 +87,41 @@ def make_image(prompt, path):
         fh.write(img)
 
 
+EDGE_VOICES = {
+    "EN": "en-US-AndrewNeural", "BN": "bn-BD-NabanitaNeural", "HI": "hi-IN-SwaraNeural",
+    "ES": "es-ES-ElviraNeural", "FR": "fr-FR-DeniseNeural", "AR": "ar-SA-ZariyahNeural",
+    "UR": "ur-PK-UzmaNeural", "ZH": "zh-CN-XiaoxiaoNeural", "JP": "ja-JP-NanamiNeural",
+}
+
+
+def voice_name(lang):
+    lang = str(lang or "EN").strip()
+    if "Neural" in lang:
+        return lang
+    return EDGE_VOICES.get(lang.upper(), EDGE_VOICES["EN"])
+
+
 def make_voice(text, lang, path):
-    raw, ctype = cf_run(TTS, {"prompt": text[:1500], "lang": (lang or "EN").upper()})
-    audio = raw if ctype.startswith("audio/") else b64_from_json(raw, "audio")
-    with open(path, "wb") as fh:
-        fh.write(audio)
+    """Free Microsoft Edge neural voice (no key). Falls back to Cloudflare aura-2-en for English."""
+    import subprocess
+    voice = voice_name(lang)
+    last = ""
+    for attempt in range(1, 4):
+        proc = subprocess.run(["edge-tts", "--voice", voice, "--text", text[:1500], "--write-media", path],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
+        if proc.returncode == 0 and os.path.exists(path) and os.path.getsize(path) > 2000:
+            return
+        last = proc.stderr.decode("utf-8", "replace")[-300:]
+        log("edge-tts attempt %d failed: %s" % (attempt, last))
+        time.sleep(3 * attempt)
+    if voice.startswith("en-"):
+        log("falling back to Cloudflare aura-2-en")
+        raw, ctype = cf_run(TTS, {"text": text[:1500]})
+        audio = raw if ctype.startswith("audio/") else b64_from_json(raw, "audio")
+        with open(path, "wb") as fh:
+            fh.write(audio)
+        return
+    raise RuntimeError("voice generation failed: " + last)
 
 
 def telegram_download(file_id, path):
@@ -124,7 +154,7 @@ def main():
         "music": "auto",
         "music_dir": os.path.join(ROOT, "music"),
         "music_volume": 0.12,
-        "font": "DejaVu Sans",
+        "font": "Noto Sans Bengali" if voice_name(p.get("voice_lang")).startswith("bn-") else "DejaVu Sans",
         "subtitles": True,
     }
     os.makedirs(os.path.join(ROOT, "out"), exist_ok=True)
