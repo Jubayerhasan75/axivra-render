@@ -116,13 +116,6 @@ def make_voice(text, lang, path):
         last = proc.stderr.decode("utf-8", "replace")[-300:]
         log("edge-tts attempt %d failed: %s" % (attempt, last))
         time.sleep(3 * attempt)
-    if voice.startswith("en-"):
-        log("falling back to Cloudflare aura-2-en")
-        raw, ctype = cf_run(TTS, {"text": text[:1500]})
-        audio = raw if ctype.startswith("audio/") else b64_from_json(raw, "audio")
-        with open(path, "wb") as fh:
-            fh.write(audio)
-        return
     raise RuntimeError("voice generation failed: " + last)
 
 
@@ -147,7 +140,11 @@ def make_poster(p, job, work):
     bg = os.path.join(work, "background.jpg")
     scene = str(p.get("scene_prompt") or "abstract modern technology background, navy blue and sky blue light")
     log("poster: background image")
-    make_image(scene + ", high detail, professional advertising photography, no text, no letters, no logos, no watermark", bg, steps=8)
+    try:
+        make_image(scene + ", high detail, professional advertising photography, no text, no letters, no logos, no watermark", bg, steps=8)
+    except Exception as exc:  # noqa: BLE001 - quota used up / service down: use the designed background
+        log("poster: AI background unavailable (%s) - using the designed brand background" % str(exc)[:160])
+        bg = None
     os.makedirs(os.path.join(ROOT, "out"), exist_ok=True)
     out_name = job + ".jpg"
     out_path = os.path.join(ROOT, "out", out_name)
@@ -199,8 +196,12 @@ def main():
             narration = str(sc.get("narration") or "").strip()
             if narration:
                 log("scene %d: voice" % i)
-                make_voice(narration, p.get("voice_lang"), aud)
-                entry["audio"] = aud
+                try:
+                    make_voice(narration, p.get("voice_lang"), aud)
+                    entry["audio"] = aud
+                except Exception as exc:  # noqa: BLE001 - keep the reel, show the line as caption
+                    log("scene %d: no voice (%s) - captions only" % (i, str(exc)[:120]))
+                    entry["duration"] = max(3.5, min(8.0, len(narration.split()) / 2.6))
             else:
                 entry["duration"] = 3.5
             built.append(entry)
