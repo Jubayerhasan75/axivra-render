@@ -8,6 +8,8 @@ n8n (AX4 Create Reel / AX5 Animate Image) sends a repository_dispatch event:
     client_payload:
       reel    -> {job_id, kind:"reel", title, voice_lang, scenes:[{narration, caption, image_prompt}]}
       animate -> {job_id, kind:"animate", telegram_file_id, text, duration}
+      poster  -> {job_id, kind:"poster", theme, headline, subline, features, cta,
+                  corner_left, corner_right, tagline, website, email, company, scene_prompt}
 
 This script:
   1. builds every asset for free (Cloudflare Workers AI images + voice, or the
@@ -80,8 +82,8 @@ def b64_from_json(raw, key):
     return base64.b64decode(val)
 
 
-def make_image(prompt, path):
-    raw, ctype = cf_run(FLUX, {"prompt": prompt[:2000], "steps": 6})
+def make_image(prompt, path, steps=6):
+    raw, ctype = cf_run(FLUX, {"prompt": prompt[:2000], "steps": steps})
     img = raw if ctype.startswith("image/") else b64_from_json(raw, "image")
     with open(path, "wb") as fh:
         fh.write(img)
@@ -137,6 +139,23 @@ def telegram_download(file_id, path):
         fh.write(raw)
 
 
+def make_poster(p, job, work):
+    """FLUX background (free) + HTML brand design rendered by headless Chrome."""
+    sys.path.insert(0, os.path.join(ROOT, "poster"))
+    import render_poster  # noqa: E402
+    bg = os.path.join(work, "background.jpg")
+    scene = str(p.get("scene_prompt") or "abstract modern technology background, navy blue and sky blue light")
+    log("poster: background image")
+    make_image(scene + ", high detail, professional advertising photography, no text, no letters, no logos, no watermark", bg, steps=8)
+    os.makedirs(os.path.join(ROOT, "out"), exist_ok=True)
+    out_name = job + ".jpg"
+    out_path = os.path.join(ROOT, "out", out_name)
+    log("poster: rendering layout (%s)" % p.get("theme"))
+    res = render_poster.render(p, bg, out_path)
+    res.update({"job_id": job, "kind": "poster", "file": out_path, "name": out_name})
+    return res
+
+
 def main():
     event_path = os.environ.get("GITHUB_EVENT_PATH", "")
     with open(event_path, "r", encoding="utf-8") as fh:
@@ -148,6 +167,8 @@ def main():
     kind = str(p.get("kind") or "reel")
     work = os.path.join(ROOT, "work", job)
     os.makedirs(work, exist_ok=True)
+    if kind == "poster":
+        return make_poster(p, job, work)
     out_name = job + ".mp4"
     manifest = {
         "output": os.path.join(ROOT, "out", out_name),
