@@ -313,7 +313,26 @@ def chrome_bin():
     raise RuntimeError("Google Chrome / Chromium is not installed")
 
 
+def validate(data):
+    """Refuse to draw an incomplete poster - a clear error is better than a broken image."""
+    problems = []
+    head = re.sub(r"[\[\]\s]", "", str(data.get("headline") or ""))
+    if len(head) < 6:
+        problems.append("headline is missing")
+    feats = [f for f in (data.get("features") or []) if isinstance(f, dict) and str(f.get("label") or "").strip()]
+    if len(feats) < 3:
+        problems.append("fewer than 3 features")
+    if not str(data.get("cta") or "").strip():
+        problems.append("button text is missing")
+    if not str(data.get("website") or "").strip() or not str(data.get("email") or "").strip():
+        problems.append("website / email are missing")
+    if problems:
+        raise RuntimeError("poster data incomplete: " + ", ".join(problems) +
+                           " (if this repeats, scripts/axivra_job.py on GitHub is outdated)")
+
+
 def render(data, bg_path, out_path, scale=2):
+    validate(data)
     theme = str(data.get("theme") or "dark").lower()
     if theme not in THEMES:
         theme = "dark"
