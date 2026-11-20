@@ -304,6 +304,55 @@ body{background:#fbf7f1;color:#0f172a}
 
 THEMES = {"dark": theme_dark, "light": theme_light, "warm": theme_warm}
 
+# Designed backgrounds - used when no AI picture is available (quota used up, service down).
+# Pure CSS, so a poster can always be delivered.
+GEN_BG = {
+    "dark": """
+.bg{background:
+ radial-gradient(ellipse 55% 30% at 50% 66%, rgba(34,211,238,.55), transparent 70%),
+ radial-gradient(ellipse 35% 22% at 50% 66%, rgba(46,230,192,.35), transparent 70%),
+ radial-gradient(circle at 12% 30%, rgba(26,115,232,.30), transparent 32%),
+ radial-gradient(circle at 88% 38%, rgba(26,180,232,.25), transparent 30%),
+ linear-gradient(180deg,#030b1c 0%,#06183a 55%,#030b1c 100%) !important}
+.bg:before{content:"";position:absolute;left:-30%;right:-30%;top:58%;height:60%;
+ background:repeating-linear-gradient(90deg,rgba(34,211,238,.28) 0 2px,transparent 2px 90px),
+            repeating-linear-gradient(0deg,rgba(34,211,238,.22) 0 2px,transparent 2px 70px);
+ transform:perspective(500px) rotateX(62deg);transform-origin:top;
+ -webkit-mask-image:linear-gradient(180deg,#000,transparent 85%)}
+.bg:after{content:"";position:absolute;left:50%;top:52%;width:560px;height:560px;margin-left:-280px;border-radius:50%;
+ border:2px solid rgba(34,211,238,.55);box-shadow:0 0 60px rgba(34,211,238,.45),inset 0 0 60px rgba(34,211,238,.25),
+ 0 0 0 40px rgba(34,211,238,.06),0 0 0 90px rgba(34,211,238,.035)}
+""",
+    "light": """
+.bg{background:
+ radial-gradient(circle at 82% 30%, #dbeafe 0, transparent 34%),
+ radial-gradient(circle at 92% 78%, #e0f2fe 0, transparent 30%),
+ radial-gradient(circle at 70% 60%, rgba(26,115,232,.10) 0, transparent 40%),
+ #f7f9fd !important}
+.bg:before{content:"";position:absolute;right:-200px;top:470px;width:520px;height:660px;border-radius:60px;
+ background:linear-gradient(145deg,#1f3f8a,#0f1f4b);transform:rotate(-12deg);box-shadow:0 40px 80px rgba(15,31,75,.25)}
+.bg:after{content:"";position:absolute;right:-20px;top:540px;width:350px;height:480px;border-radius:40px;
+ background:linear-gradient(160deg,rgba(255,255,255,.95),rgba(232,242,255,.9));transform:rotate(-12deg);
+ box-shadow:0 20px 50px rgba(15,31,75,.18);
+ background-image:linear-gradient(160deg,rgba(255,255,255,.96),rgba(232,242,255,.92)),repeating-linear-gradient(0deg,transparent 0 46px,rgba(26,115,232,.12) 46px 48px)}
+""",
+    "warm": """
+.bg{background:
+ radial-gradient(circle at 78% 34%, rgba(255,200,120,.85) 0, transparent 30%),
+ radial-gradient(circle at 20% 70%, rgba(26,180,232,.25) 0, transparent 28%),
+ radial-gradient(circle at 60% 60%, rgba(255,170,90,.35) 0, transparent 40%),
+ linear-gradient(180deg,#fff8ef 0%,#fde7cf 40%,#f3c9a1 70%,#d99a6c 100%) !important}
+.bg:before{content:"";position:absolute;inset:0;
+ background:radial-gradient(circle at 18% 42%,rgba(255,255,255,.55) 0 40px,transparent 42px),
+            radial-gradient(circle at 34% 58%,rgba(255,255,255,.35) 0 26px,transparent 28px),
+            radial-gradient(circle at 62% 48%,rgba(255,255,255,.40) 0 34px,transparent 36px),
+            radial-gradient(circle at 86% 62%,rgba(255,255,255,.30) 0 22px,transparent 24px);filter:blur(6px)}
+.bg:after{content:"";position:absolute;left:-10%;right:-10%;top:30%;height:50%;
+ background:repeating-linear-gradient(115deg,rgba(26,180,232,.0) 0 60px,rgba(26,180,232,.18) 60px 63px);
+ -webkit-mask-image:linear-gradient(90deg,transparent,#000 40%,#000 70%,transparent)}
+""",
+}
+
 
 def chrome_bin():
     for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
@@ -339,11 +388,15 @@ def render(data, bg_path, out_path, scale=2):
     work = tempfile.mkdtemp(prefix="poster_")
     for sub in ("fonts", "assets"):
         os.symlink(os.path.join(HERE, sub), os.path.join(work, sub))
-    bg_name = "bg" + os.path.splitext(bg_path)[1].lower()
-    shutil.copyfile(bg_path, os.path.join(work, bg_name))
+    if bg_path and os.path.exists(bg_path) and os.path.getsize(bg_path) > 1000:
+        bg_name = "bg" + os.path.splitext(bg_path)[1].lower()
+        shutil.copyfile(bg_path, os.path.join(work, bg_name))
+        html_doc = THEMES[theme](data, bg_name)
+    else:
+        html_doc = THEMES[theme](data, "none").replace("</style>", GEN_BG[theme] + "</style>", 1)
     page_path = os.path.join(work, "poster.html")
     with open(page_path, "w", encoding="utf-8") as fh:
-        fh.write(THEMES[theme](data, bg_name))
+        fh.write(html_doc)
     png = os.path.join(work, "poster.png")
     cmd = [chrome_bin(), "--headless=new", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
            "--allow-file-access-from-files", "--force-device-scale-factor=%s" % scale,
@@ -359,7 +412,8 @@ def render(data, bg_path, out_path, scale=2):
     except Exception:  # noqa: BLE001 - Pillow missing: ship the PNG instead
         shutil.copyfile(png, out_path)
     shutil.rmtree(work, ignore_errors=True)
-    return {"ok": True, "theme": theme, "output": out_path, "width": W * scale, "height": H * scale}
+    return {"ok": True, "theme": theme, "output": out_path, "width": W * scale, "height": H * scale,
+            "ai_background": html_doc.find(GEN_BG[theme][:40]) < 0}
 
 
 if __name__ == "__main__":
