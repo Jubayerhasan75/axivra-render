@@ -143,6 +143,7 @@ def make_poster(p, job, work):
     """FLUX background (free) + HTML brand design rendered by headless Chrome."""
     sys.path.insert(0, os.path.join(ROOT, "poster"))
     import render_poster  # noqa: E402
+    render_poster.validate(p)  # fail fast, before spending Cloudflare credits
     bg = os.path.join(work, "background.jpg")
     scene = str(p.get("scene_prompt") or "abstract modern technology background, navy blue and sky blue light")
     log("poster: background image")
@@ -168,7 +169,11 @@ def main():
     work = os.path.join(ROOT, "work", job)
     os.makedirs(work, exist_ok=True)
     if kind == "poster":
-        return make_poster(p, job, work)
+        # GitHub allows max 10 top-level client_payload fields, so poster data arrives nested
+        data = dict(p)
+        if isinstance(p.get("poster"), dict):
+            data.update(p["poster"])
+        return make_poster(data, job, work)
     out_name = job + ".mp4"
     manifest = {
         "output": os.path.join(ROOT, "out", out_name),
