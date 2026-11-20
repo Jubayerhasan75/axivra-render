@@ -20,20 +20,27 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install FFmpeg and fonts
+        if: github.event.client_payload.kind != 'poster'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fonts-dejavu-core fonts-noto-core > /dev/null
           pip install --quiet edge-tts
           ffmpeg -hide_banner -version | head -n 1
 
-      - name: Build assets and render video
+      - name: Poster tools (Chrome is preinstalled)
+        if: github.event.client_payload.kind == 'poster'
+        run: |
+          pip install --quiet pillow
+          google-chrome --version
+
+      - name: Build assets and render
         env:
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: python3 scripts/axivra_job.py
 
-      - name: Upload video to the "renders" release
+      - name: Upload the result to the "renders" release
         id: upload
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,12 +52,12 @@ jobs:
           fi
           FILE=$(jq -r '.file' result.json)
           NAME=$(jq -r '.name' result.json)
-          gh release view renders > /dev/null 2>&1 || gh release create renders --title "Rendered media" --notes "Videos rendered for n8n. Old files are deleted automatically after 48 hours."
+          gh release view renders > /dev/null 2>&1 || gh release create renders --title "Rendered media" --notes "Videos and posters rendered for n8n. Old files are deleted automatically after 48 hours."
           if gh release upload renders "$FILE" --clobber; then
             URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/renders/${NAME}"
             jq --arg url "$URL" '. + {video_url: $url}' result.json > result2.json && mv result2.json result.json
           else
-            jq '. + {status: "failed", error: "Could not upload the video to the GitHub release"}' result.json > result2.json && mv result2.json result.json
+            jq '. + {status: "failed", error: "Could not upload the file to the GitHub release"}' result.json > result2.json && mv result2.json result.json
           fi
 
       - name: Report back to n8n
