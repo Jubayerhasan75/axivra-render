@@ -133,18 +133,15 @@ def telegram_download(file_id, path):
 
 
 def make_poster(p, job, work):
-    """FLUX background (free) + HTML brand design rendered by headless Chrome."""
+    """FLUX background (free, required) + HTML brand design rendered by headless Chrome."""
     sys.path.insert(0, os.path.join(ROOT, "poster"))
     import render_poster  # noqa: E402
     render_poster.validate(p)  # fail fast, before spending Cloudflare credits
     bg = os.path.join(work, "background.jpg")
     scene = str(p.get("scene_prompt") or "abstract modern technology background, navy blue and sky blue light")
     log("poster: background image")
-    try:
-        make_image(scene + ", high detail, professional advertising photography, no text, no letters, no logos, no watermark", bg, steps=8)
-    except Exception as exc:  # noqa: BLE001 - quota used up / service down: use the designed background
-        log("poster: AI background unavailable (%s) - using the designed brand background" % str(exc)[:160])
-        bg = None
+    # No substitute background: if the free quota is used up the job fails and n8n tells the Boss.
+    make_image(scene + ", high detail, professional advertising photography, no text, no letters, no logos, no watermark", bg, steps=8)
     os.makedirs(os.path.join(ROOT, "out"), exist_ok=True)
     out_name = job + ".jpg"
     out_path = os.path.join(ROOT, "out", out_name)
