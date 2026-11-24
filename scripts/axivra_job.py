@@ -21,6 +21,7 @@ Standard library only.
 """
 
 import base64
+import shutil
 import json
 import os
 import sys
@@ -132,9 +133,25 @@ def telegram_download(file_id, path):
         fh.write(raw)
 
 
-HERO_STYLE = (", glossy 3D render, blue and white colour palette with royal blue and cyan accents, isolated on a pure white "
-              "background, soft studio lighting, soft contact shadow, clean premium tech advertising illustration, "
-              "high detail, no text, no letters, no words, no logos")
+HERO_STYLE = (". Product-shot style 3D render of only these objects, floating on a completely empty plain background: "
+              "no room, no environment, no scenery, no furniture, no server room, no landscape, no background objects. "
+              "Glossy 3D objects in a blue and white colour palette with royal blue and cyan accents, all solid and fully "
+              "opaque. The whole group is compact, small and centred with wide empty margins on all four sides; every "
+              "object is complete and nothing touches or is cut off by the image edges. Plain seamless flat medium grey "
+              "studio backdrop, even soft studio lighting, subtle soft shadow, clean premium tech advertising 3D "
+              "illustration, sharp focus everywhere, no depth of field, no blur, high detail, no text, no letters, "
+              "no words, no logos")
+# extra wording for a second / third try when the first picture could not be cut out cleanly
+RETRY_HINTS = [
+    "",
+    " Fewer objects, simpler shapes, everything smaller and clearly separated from the plain grey backdrop.",
+    " Only the main object and two small floating icons, small in the middle of an empty plain grey backdrop.",
+]
+
+
+def _hero_score(rep):
+    """Lower is better. A clean cut-out always beats an unclean one."""
+    return (0 if rep.get("clean") else 10) + min(rep.get("touch_px", 0), 2000) / 200.0 + rep.get("unsure", 1) + rep.get("lost", 1)
 
 
 def make_poster(p, job, work):
@@ -158,8 +175,26 @@ def make_poster(p, job, work):
         subject = str(p.get("hero_prompt") or p.get("scene_prompt") or "a modern laptop with floating 3D charts and icons")
         log("poster: AI 3D object")
         # No substitute picture: if the free quota is used up the job fails and n8n tells the Boss.
-        make_image(subject[:1200] + HERO_STYLE, raw, steps=8)
-        log("poster: cut-out (%s)" % brand_poster.cutout(raw, hero))
+        best = None
+        for attempt, hint in enumerate(RETRY_HINTS, start=1):
+            raw_i = os.path.join(work, "hero_raw_%d.jpg" % attempt)
+            hero_i = os.path.join(work, "hero_%d.png" % attempt)
+            try:
+                # No substitute picture: if the free quota is used up the job fails and n8n tells the Boss.
+                make_image(subject[:1100] + HERO_STYLE + hint, raw_i, steps=8)
+            except Exception:  # noqa: BLE001
+                if best is None:
+                    raise
+                log("poster: extra picture attempt failed, using the best one so far")
+                break
+            rep = brand_poster.cutout(raw_i, hero_i)
+            log("poster: picture %d cut-out %s" % (attempt, json.dumps(rep)))
+            if best is None or _hero_score(rep) < _hero_score(best[0]):
+                best = (rep, hero_i)
+            if rep.get("clean"):
+                break
+        shutil.copyfile(best[1], hero)
+        log("poster: using picture with %s" % json.dumps(best[0]))
         log("poster: rendering layout %s / %s" % (p.get("layout"), p.get("palette")))
         res = brand_poster.render(p, hero, out_path)
     res.update({"job_id": job, "kind": "poster", "file": out_path, "name": out_name})
