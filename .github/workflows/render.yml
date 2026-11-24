@@ -27,6 +27,12 @@ jobs:
           pip install --quiet edge-tts
           ffmpeg -hide_banner -version | head -n 1
 
+      - name: Python 3.12 for the poster tools
+        if: github.event.client_payload.kind == 'poster'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Cache the background-removal model
         if: github.event.client_payload.kind == 'poster'
         uses: actions/cache@v4
