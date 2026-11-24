@@ -132,21 +132,36 @@ def telegram_download(file_id, path):
         fh.write(raw)
 
 
+HERO_STYLE = (", glossy 3D render, blue and white colour palette with royal blue and cyan accents, isolated on a pure white "
+              "background, soft studio lighting, soft contact shadow, clean premium tech advertising illustration, "
+              "high detail, no text, no letters, no words, no logos")
+
+
 def make_poster(p, job, work):
-    """FLUX background (free, required) + HTML brand design rendered by headless Chrome."""
+    """AI 3D object (free FLUX, required) cut out like a PNG + DigimationTech brand layout rendered by headless Chrome."""
     sys.path.insert(0, os.path.join(ROOT, "poster"))
     import render_poster  # noqa: E402
     render_poster.validate(p)  # fail fast, before spending Cloudflare credits
-    bg = os.path.join(work, "background.jpg")
-    scene = str(p.get("scene_prompt") or "abstract modern technology background, navy blue and sky blue light")
-    log("poster: background image")
-    # No substitute background: if the free quota is used up the job fails and n8n tells the Boss.
-    make_image(scene + ", high detail, professional advertising photography, no text, no letters, no logos, no watermark", bg, steps=8)
     os.makedirs(os.path.join(ROOT, "out"), exist_ok=True)
     out_name = job + ".jpg"
     out_path = os.path.join(ROOT, "out", out_name)
-    log("poster: rendering layout (%s)" % p.get("theme"))
-    res = render_poster.render(p, bg, out_path)
+    if str(p.get("theme") or "") in ("dark", "light", "warm") and not p.get("hero_prompt"):
+        # old-style job (sent by an older AX8): keep it working
+        bg = os.path.join(work, "background.jpg")
+        scene = str(p.get("scene_prompt") or "abstract modern technology background, navy blue and sky blue light")
+        make_image(scene + ", high detail, professional advertising photography, no text, no letters, no logos, no watermark", bg, steps=8)
+        res = render_poster.render(p, bg, out_path)
+    else:
+        import brand_poster  # noqa: E402
+        raw = os.path.join(work, "hero_raw.jpg")
+        hero = os.path.join(work, "hero.png")
+        subject = str(p.get("hero_prompt") or p.get("scene_prompt") or "a modern laptop with floating 3D charts and icons")
+        log("poster: AI 3D object")
+        # No substitute picture: if the free quota is used up the job fails and n8n tells the Boss.
+        make_image(subject[:1200] + HERO_STYLE, raw, steps=8)
+        log("poster: cut-out (%s)" % brand_poster.cutout(raw, hero))
+        log("poster: rendering layout %s / %s" % (p.get("layout"), p.get("palette")))
+        res = brand_poster.render(p, hero, out_path)
     res.update({"job_id": job, "kind": "poster", "file": out_path, "name": out_name})
     return res
 
