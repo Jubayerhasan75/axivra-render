@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-brand_poster.py -- DigimationTech brand posters (1080x1080, rendered at 2x).
+brand_poster.py -- DigimationTech brand posters (1080x1350 = 4:5 for the mobile feed, rendered at 2x).
 
 The look follows the DigimationTech Facebook page: bright white/blue (or deep navy)
 background with soft curves and dot grids, the transparent logo top-left, a big
@@ -40,7 +40,7 @@ from render_poster import svg, validate, chrome_bin  # noqa: E402  (shared icons
 
 _rp.ICONS.setdefault('pin', '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>')
 
-W = H = 1080
+W, H = 1080, 1350
 
 
 def esc(s):
@@ -118,7 +118,7 @@ def base_css(p, d):
     cta_bg, cta_fg = ACCENTS.get(d.get("accent"), ACCENTS["blue"])
     return """
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:1080px;height:1080px;overflow:hidden}
+html,body{width:1080px;height:1350px;overflow:hidden}
 body{font-family:'Poppins',sans-serif;color:%(ink)s;background:%(bg)s;position:relative;-webkit-font-smoothing:antialiased}
 .dots{position:absolute;width:150px;height:110px;background-image:radial-gradient(%(dots)s 2.2px,transparent 2.6px);background-size:18px 18px}
 .swoosh{position:absolute;pointer-events:none}
@@ -155,16 +155,16 @@ body{font-family:'Poppins',sans-serif;color:%(ink)s;background:%(bg)s;position:r
 def decor(p, layout):
     sw = p["swoosh"]
     arcs = {
-        "split": '<svg class="swoosh" style="right:-120px;top:120px" width="760" height="760" viewBox="0 0 760 760">'
+        "split": '<svg class="swoosh" style="right:-140px;top:180px" width="860" height="860" viewBox="0 0 760 760">'
                  '<circle cx="380" cy="380" r="330" fill="none" stroke="%s" stroke-opacity=".10" stroke-width="70"/>'
                  '<path d="M80 600 C 220 760, 560 760, 720 520" fill="none" stroke="%s" stroke-opacity=".35" stroke-width="10" stroke-linecap="round"/></svg>' % (sw, sw),
-        "checklist": '<svg class="swoosh" style="right:-160px;top:60px" width="820" height="820" viewBox="0 0 820 820">'
+        "checklist": '<svg class="swoosh" style="right:-160px;top:120px" width="900" height="1080" viewBox="0 0 820 820" preserveAspectRatio="none">'
                      '<path d="M820 60 C 520 120, 380 380, 520 820" fill="none" stroke="%s" stroke-opacity=".14" stroke-width="120"/></svg>' % sw,
-        "center": '<svg class="swoosh" style="left:90px;top:300px" width="900" height="520" viewBox="0 0 900 520">'
+        "center": '<svg class="swoosh" style="left:90px;top:440px" width="900" height="600" viewBox="0 0 900 520">'
                   '<ellipse cx="450" cy="330" rx="420" ry="150" fill="none" stroke="%s" stroke-opacity=".16" stroke-width="40"/></svg>' % sw,
     }
     return (arcs.get(layout, arcs["split"]) +
-            '<div class="dots" style="right:40px;top:40px"></div><div class="dots" style="left:30px;top:560px;opacity:.6"></div>')
+            '<div class="dots" style="right:40px;top:40px"></div><div class="dots" style="left:30px;top:720px;opacity:.6"></div>')
 
 
 def logo_tag(palette):
@@ -214,39 +214,39 @@ def text_block(d, left, top, width, hmax, align="left", hsize=(96, 46), limit=66
 
 def layout_split(d, p):
     return (decor(p, "split") + logo_tag(d["palette"]) +
-            text_block(d, 52, 150, 500, 300) +
-            '<div class="glow" style="left:580px;top:610px;width:460px;height:110px"></div>'
-            '<img class="hero" src="hero.png" style="left:560px;top:130px;width:500px;height:600px">' +
-            badges(d, ["left:600px;top:140px", "left:800px;top:650px"]) +
-            feature_row(d, 772) +
-            '<div style="position:absolute;left:52px;top:%dpx" id="ctawrap"><div class="cta">%s<i>%s</i></div></div>' % (672, esc(d.get("cta")), svg("arrow", 22, 2.6)) +
+            text_block(d, 52, 160, 485, 380, hsize=(100, 48), limit=800) +
+            '<div class="glow" style="left:560px;top:790px;width:500px;height:120px"></div>'
+            '<img class="hero" src="hero.png" style="left:566px;top:210px;width:524px;height:660px">' +
+            badges(d, ["left:610px;top:170px", "left:800px;top:850px"]) +
+            feature_row(d, 990) +
+            '<div style="position:absolute;left:52px;top:%dpx" id="ctawrap" data-max="900"><div class="cta">%s<i>%s</i></div></div>' % (840, esc(d.get("cta")), svg("arrow", 22, 2.6)) +
             footer(d))
 
 
 def layout_checklist(d, p):
     feats = (d.get("features") or [])[:4]
-    rows = "".join('<div class="card" style="display:flex;align-items:center;gap:14px;padding:12px 16px">'
-                   '<div class="feat"><div class="ic" style="width:48px;height:48px">%s</div></div>'
-                   '<div><div style="font-weight:800;font-size:17px">%s</div><div style="font-size:13px;opacity:.8">%s</div></div></div>'
-                   % (svg(f.get("icon"), 24, 2), esc(f.get("label")), esc(f.get("desc"))) for f in feats)
+    rows = "".join('<div class="card" style="display:flex;align-items:center;gap:16px;padding:16px 18px">'
+                   '<div class="feat"><div class="ic" style="width:54px;height:54px">%s</div></div>'
+                   '<div><div style="font-weight:800;font-size:19px">%s</div><div style="font-size:14px;opacity:.8">%s</div></div></div>'
+                   % (svg(f.get("icon"), 26, 2), esc(f.get("label")), esc(f.get("desc"))) for f in feats)
     return (decor(p, "checklist") + logo_tag(d["palette"]) +
-            text_block(d, 52, 140, 560, 270, hsize=(88, 44), limit=546) +
-            '<div style="position:absolute;left:52px;top:560px;width:470px;display:flex;flex-direction:column;gap:12px">%s</div>' % rows +
-            '<div class="glow" style="left:540px;top:740px;width:500px;height:120px"></div>'
-            '<img class="hero" src="hero.png" style="left:500px;top:250px;width:600px;height:600px">' +
-            badges(d, ["left:560px;top:200px", "left:820px;top:860px"]) +
-            '<div style="position:absolute;left:52px;top:912px"><div class="cta">%s<i>%s</i></div></div>' % (esc(d.get("cta")), svg("arrow", 22, 2.6)) +
+            text_block(d, 52, 150, 580, 300, hsize=(92, 46), limit=600) +
+            '<div style="position:absolute;left:52px;top:630px;width:480px;display:flex;flex-direction:column;gap:16px">%s</div>' % rows +
+            '<div class="glow" style="left:520px;top:1010px;width:520px;height:130px"></div>'
+            '<img class="hero" src="hero.png" style="left:470px;top:330px;width:640px;height:780px">' +
+            badges(d, ["left:600px;top:260px", "left:800px;top:1080px"]) +
+            '<div style="position:absolute;left:52px;top:1100px"><div class="cta">%s<i>%s</i></div></div>' % (esc(d.get("cta")), svg("arrow", 22, 2.6)) +
             footer(d))
 
 
 def layout_center(d, p):
     return (decor(p, "center") + logo_tag(d["palette"]) +
-            text_block(d, 90, 130, 900, 200, align="center", hsize=(80, 42), limit=388) +
-            '<div class="glow" style="left:280px;top:660px;width:520px;height:100px"></div>'
-            '<img class="hero" src="hero.png" style="left:300px;top:395px;width:480px;height:345px">' +
-            badges(d, ["left:90px;top:470px", "right:90px;top:600px"]) +
-            feature_row(d, 752, desc=False) +
-            '<div style="position:absolute;left:0;right:0;top:902px;display:flex;justify-content:center"><div class="cta">%s<i>%s</i></div></div>'
+            text_block(d, 90, 140, 900, 230, align="center", hsize=(88, 44), limit=440) +
+            '<div class="glow" style="left:250px;top:880px;width:580px;height:120px"></div>'
+            '<img class="hero" src="hero.png" style="left:220px;top:455px;width:640px;height:500px">' +
+            badges(d, ["left:60px;top:560px", "right:60px;top:800px"]) +
+            feature_row(d, 990, desc=False) +
+            '<div style="position:absolute;left:0;right:0;top:1170px;display:flex;justify-content:center"><div class="cta">%s<i>%s</i></div></div>'
             % (esc(d.get("cta")), svg("arrow", 22, 2.6)) +
             footer(d))
 
@@ -261,7 +261,11 @@ function shrinkBlock(){var tb=document.getElementById('tb');if(!tb)return;
  if(tb.offsetTop+tb.offsetHeight>limit&&b){b.style.display='none';}
  var fs=25;while(sub&&tb.offsetTop+tb.offsetHeight>limit&&fs>17){fs-=1;sub.style.fontSize=fs+'px';}
  var h=document.getElementById('hl');var s=parseFloat(h.style.fontSize);while(tb.offsetTop+tb.offsetHeight>limit&&s>40){s-=2;h.style.fontSize=s+'px';}}
-document.fonts.ready.then(function(){fit('hl');shrinkBlock();document.body.setAttribute('data-ready','1');});
+function placeCta(){var c=document.getElementById('ctawrap'),tb=document.getElementById('tb');if(!c||!tb)return;
+ var bottom=tb.offsetTop+tb.offsetHeight,slack=+c.dataset.max-(bottom+44+62);
+ if(slack>0){var sh=Math.min(slack/2,90);tb.style.top=(tb.offsetTop+sh)+'px';bottom+=sh;}
+ c.style.top=(bottom+44)+'px';}
+document.fonts.ready.then(function(){fit('hl');shrinkBlock();placeCta();document.body.setAttribute('data-ready','1');});
 </script>"""
 
 
