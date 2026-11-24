@@ -216,7 +216,7 @@ def layout_split(d, p):
     return (decor(p, "split") + logo_tag(d["palette"]) +
             text_block(d, 52, 160, 485, 380, hsize=(100, 48), limit=800) +
             '<div class="glow" style="left:560px;top:790px;width:500px;height:120px"></div>'
-            '<img class="hero" src="hero.png" style="left:566px;top:210px;width:524px;height:660px">' +
+            '<img class="hero" src="hero.png" style="left:560px;top:210px;width:500px;height:660px">' +
             badges(d, ["left:610px;top:170px", "left:800px;top:850px"]) +
             feature_row(d, 990) +
             '<div style="position:absolute;left:52px;top:%dpx" id="ctawrap" data-max="900"><div class="cta">%s<i>%s</i></div></div>' % (840, esc(d.get("cta")), svg("arrow", 22, 2.6)) +
@@ -232,8 +232,8 @@ def layout_checklist(d, p):
     return (decor(p, "checklist") + logo_tag(d["palette"]) +
             text_block(d, 52, 150, 580, 300, hsize=(92, 46), limit=600) +
             '<div style="position:absolute;left:52px;top:630px;width:480px;display:flex;flex-direction:column;gap:16px">%s</div>' % rows +
-            '<div class="glow" style="left:520px;top:1010px;width:520px;height:130px"></div>'
-            '<img class="hero" src="hero.png" style="left:470px;top:330px;width:640px;height:780px">' +
+            '<div class="glow" style="left:560px;top:1000px;width:480px;height:130px"></div>'
+            '<img class="hero" src="hero.png" style="left:545px;top:330px;width:515px;height:760px">' +
             badges(d, ["left:600px;top:260px", "left:800px;top:1080px"]) +
             '<div style="position:absolute;left:52px;top:1100px"><div class="cta">%s<i>%s</i></div></div>' % (esc(d.get("cta")), svg("arrow", 22, 2.6)) +
             footer(d))
@@ -304,55 +304,105 @@ def render(data, hero_path, out_path, scale=2):
             "width": W * scale, "height": H * scale, "ai_background": True}
 
 
-def fill_holes(rgba, original=None):
-    """Keep white parts that sit INSIDE the object (phone screens, robot bodies):
-    only background that touches the image border stays transparent."""
-    from PIL import Image, ImageDraw, ImageChops, ImageFilter
-    a = rgba.split()[3]
-    solid = a.point(lambda v: 255 if v > 40 else 0)
-    w, h = solid.size
-    canvas = Image.new("L", (w + 2, h + 2), 0)
-    canvas.paste(solid, (1, 1))
-    ImageDraw.floodfill(canvas, (0, 0), 128, thresh=0)
-    outside = canvas.crop((1, 1, w + 1, h + 1)).point(lambda v: 255 if v == 128 else 0)
-    holes = ImageChops.subtract(Image.new("L", (w, h), 255), ImageChops.lighter(outside, solid))
-    holes = holes.filter(ImageFilter.MaxFilter(3))
-    new_a = ImageChops.lighter(a, holes)
-    base = original.convert("RGBA") if original is not None else rgba
-    base.putalpha(new_a)
-    return base
+_REMBG = {}
 
 
 def cutout(src, dst):
-    """Remove the plain background of the AI render so it sits on the poster like a PNG.
-    Falls back to a soft-edged version when rembg is unavailable."""
-    from PIL import Image, ImageFilter, ImageChops
-    try:
-        from rembg import remove, new_session
-        sess = new_session("isnet-general-use")
-        im = Image.open(src).convert("RGB")
-        out = remove(im, session=sess, post_process_mask=True)
-        out = fill_holes(out, im)
-        bbox = out.getbbox()
-        if not bbox or (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) < 0.05 * out.size[0] * out.size[1]:
-            raise RuntimeError("cut-out too small")
-        out = out.crop(bbox)
-        out.save(dst)
-        return "cutout"
-    except Exception as exc:  # noqa: BLE001
-        sys.stderr.write("[poster] cut-out unavailable (%s) - using soft mask\n" % str(exc)[:160])
-        im = Image.open(src).convert("RGB")
-        w, h = im.size
-        mask = Image.new("L", (w, h), 0)
-        from PIL import ImageDraw
-        ImageDraw.Draw(mask).ellipse((w * .06, h * .06, w * .94, h * .94), fill=255)
-        mask = mask.filter(ImageFilter.GaussianBlur(w * .06))
-        # drop near-white pixels so the white studio background disappears on light posters
-        gray = im.convert("L").point(lambda v: 255 if v < 238 else 0).filter(ImageFilter.GaussianBlur(2))
-        alpha = ImageChops.multiply(mask, gray)
-        im.putalpha(alpha)
-        im.save(dst)
-        return "soft"
+    """Cut the AI 3D render out of its plain studio backdrop so it sits on the poster like a PNG.
+    Returns a quality report; axivra_job.py renders a new picture when the cut-out is not clean
+    (object touching the frame edge, scenery behind the objects, or white parts lost)."""
+    import numpy as np
+    from PIL import Image
+    from scipy import ndimage
+    from rembg import remove, new_session
+    if "s" not in _REMBG:
+        _REMBG["s"] = new_session("isnet-general-use")
+    im = Image.open(src).convert("RGB")
+    raw = np.asarray(remove(im, session=_REMBG["s"], post_process_mask=False).split()[3]).astype(np.float32)
+    solid = raw >= 225
+    unsure = (raw > 30) & (raw < 225)
+    mask = raw > 127
+    # drop crumbs: keep only pieces bigger than 0.15 % of the picture (real floating icons are bigger)
+    lab, n = ndimage.label(mask)
+    if n:
+        sizes = ndimage.sum(mask, lab, range(1, n + 1))
+        mask = np.isin(lab, 1 + np.where(sizes >= mask.size * 0.0015)[0])
+    dropped = float(((raw > 127) & ~mask).sum()) / max(float(mask.sum()), 1.0)
+    # The backdrop is plain mid grey (a soft vertical gradient). Anything clearly brighter than the backdrop
+    # (white plastic, screens) or clearly coloured that sits next to the object but was cut away means the
+    # cut-out lost a piece of the object -> report it so a new picture is rendered.
+    rgb = np.asarray(im).astype(np.float32)
+    lum = rgb.mean(axis=2)
+    sat = (rgb.max(axis=2) - rgb.min(axis=2)) / np.maximum(rgb.max(axis=2), 1.0)
+    side = np.concatenate([lum[:, :10], lum[:, -10:]], axis=1)
+    row_bg = np.median(side, axis=1)
+    k = 81
+    pad = np.pad(row_bg, (k // 2, k // 2), mode="edge")
+    row_bg = np.array([np.median(pad[r:r + k]) for r in range(len(row_bg))])
+    ring = np.concatenate([lum[:8].ravel(), lum[-8:].ravel(), side.ravel()])
+    bg_lum = float(np.median(ring))
+    bg_spread = float(np.median(np.abs(np.diff(row_bg))) * len(row_bg)) if len(row_bg) > 1 else 0.0
+    bg_spread = float(np.percentile(np.abs(side - row_bg[:, None]), 90))
+    lostish = ((lum > row_bg[:, None] + 25) & (sat < 0.3)) | (sat > 0.35)
+    lostish &= ~mask
+    lab2, n2 = ndimage.label(lostish)
+    lost = 0.0
+    if n2:
+        # pieces that lie inside the bounding box of the object part they touch (glass screens, white panels)
+        # are part of that object -> restore them; bigger attached things (scenery behind) stay out
+        mlab, _ = ndimage.label(mask)
+        mboxes = ndimage.find_objects(mlab)
+        near = ndimage.binary_dilation(mask, iterations=2)
+        restore = np.zeros_like(mask)
+        lost_px = 0
+        for idx, sl in enumerate(ndimage.find_objects(lab2), start=1):
+            if sl is None:
+                continue
+            piece = lab2[sl] == idx
+            if not (near[sl] & piece).any():
+                continue
+            owners = np.unique(mlab[sl][ndimage.binary_dilation(piece, iterations=3) & (mlab[sl] > 0)])
+            inside = False
+            for o in owners[owners > 0]:
+                ob = mboxes[o - 1]
+                th, tw = (ob[0].stop - ob[0].start) * 0.03, (ob[1].stop - ob[1].start) * 0.03
+                if (sl[0].start >= ob[0].start - th and sl[0].stop <= ob[0].stop + th and
+                        sl[1].start >= ob[1].start - tw and sl[1].stop <= ob[1].stop + tw):
+                    inside = True
+                    break
+            if inside:
+                restore[sl] |= piece
+            else:
+                lost_px += int(piece.sum())
+        mask = mask | restore
+        lost = lost_px / max(float(mask.sum()), 1.0)
+    mask = ndimage.binary_opening(mask, iterations=1)
+    mask = ndimage.binary_fill_holes(mask)  # white parts inside the object (screens, robot body) stay
+    grown = ndimage.binary_dilation(mask, iterations=3)
+    alpha = np.where(ndimage.binary_erosion(mask, iterations=2), 255, np.where(grown, raw, 0))
+    alpha = np.clip(alpha, 0, 255).astype(np.uint8)
+    h, w = alpha.shape
+    e = 6
+    edge = np.concatenate([alpha[:e].ravel(), alpha[-e:].ravel(), alpha[:, :e].ravel(), alpha[:, -e:].ravel()])
+    report = {
+        "touch_px": int((edge > 128).sum()),
+        "unsure": round(float((unsure & grown).sum()) / max(float((solid & grown).sum()), 1.0), 3),
+        "dropped": round(dropped, 3),
+        "lost": round(lost, 3),
+        "backdrop": round(bg_lum), "backdrop_spread": round(bg_spread),
+        "cover": round(float((alpha > 128).mean()), 3),
+    }
+    report["clean"] = (report["touch_px"] < 40 and report["unsure"] < 0.18 and report["dropped"] < 0.08
+                       and report["lost"] < 0.06 and bg_lum < 232 and bg_spread < 25
+                       and 0.03 < report["cover"] < 0.72)
+    out = im.convert("RGBA")
+    out.putalpha(Image.fromarray(alpha))
+    bbox = out.getbbox()
+    if not bbox:
+        report["clean"] = False
+        bbox = (0, 0, w, h)
+    out.crop(bbox).save(dst)
+    return report
 
 
 if __name__ == "__main__":
